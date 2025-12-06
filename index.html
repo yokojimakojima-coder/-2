@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>バドミントン組み合わせアプリ（PWA対応）</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#4CAF50">
+
+<!-- PWA マニフェスト -->
+<link rel="manifest" href="manifest.webmanifest">
+
+<style>
+  body {
+    font-family: sans-serif;
+    margin: 16px;
+    font-size: 16px;
+  }
+  select, input, button {
+    padding: 10px;
+    font-size: 18px;
+    margin: 6px 0;
+    width: 100%;
+    box-sizing: border-box;
+  }
+  button {
+    background: #4CAF50;
+    color: white;
+    border: none;
+    border-radius: 6px;
+  }
+  button:active {
+    opacity: 0.7;
+  }
+  .block {
+    border: 1px solid #ccc;
+    padding: 12px;
+    border-radius: 8px;
+    margin-top: 16px;
+  }
+  table {
+    border-collapse: collapse;
+    width: 100%;
+    margin-top: 10px;
+    font-size: 14px;
+  }
+  th, td {
+    border: 1px solid #ccc;
+    padding: 6px;
+    text-align: center;
+  }
+  th {
+    background: #f0f0f0;
+  }
+  .table-wrap {
+    overflow-x: auto;
+  }
+
+  .timer-display {
+    font-size: 40px;
+    font-weight: bold;
+    text-align: center;
+    margin: 10px 0;
+  }
+
+</style>
+</head>
+<body>
+
+<h1>バドミントン組み合わせアプリ（PWA対応）</h1>
+
+<!-- ▼ 独立タイマー -->
+<div class="block">
+  <h2>⏱ 共通タイマー（独立）</h2>
+
+  試合時間（分：秒）  
+  <input id="timerInput" type="text" value="10:00">
+
+  <div id="timerDisplay" class="timer-display">10:00</div>
+
+  <button onclick="startTimer()">▶ Start</button>
+  <button onclick="pauseTimer()" style="background:#FF9800;">⏸ Pause</button>
+  <button onclick="resetTimer()" style="background:#F44336;">⏹ Reset</button>
+</div>
+
+
+<!-- ▼ 組み合わせ作成 -->
+<div class="block">
+  <h2>1. 人数を選択</h2>
+  <select id="playerCount"></select>
+
+  <h2>2. コート数</h2>
+  <input id="courtsInput" type="number" min="1" value="1">
+
+  <button id="setupBtn">人数を確定 / リセット</button>
+  <button id="nextBtn">次の試合を作成</button>
+</div>
+
+
+<!-- ▼ ラウンド表示 -->
+<div id="rounds" class="block">
+  <h2>試合履歴</h2>
+</div>
+
+
+<!-- ▼ プレイヤー情報（最下部） -->
+<div id="playerSummary" class="block" style="display:none;">
+  <h2>プレイヤー情報</h2>
+  <div class="table-wrap">
+    <div id="playerTable"></div>
+  </div>
+</div>
+
+
+<script>
+/* ===========================
+   ▼ タイマー処理（独立）
+=========================== */
+let timerInterval = null;
+let timerRemaining = 0;
+
+function parseTime(txt) {
+  const [m, s] = txt.split(":").map(Number);
+  return m * 60 + s;
+}
+
+function updateTimerDisplay() {
+  const disp = document.getElementById("timerDisplay");
+  const m = String(Math.floor(timerRemaining / 60)).padStart(2, "0");
+  const s = String(timerRemaining % 60).padStart(2, "0");
+  disp.textContent = `${m}:${s}`;
+  if (timerRemaining === 0) disp.style.color = "red";
+}
+
+function startTimer() {
+  if (timerInterval) return;
+
+  timerRemaining = parseTime(document.getElementById("timerInput").value);
+  const disp = document.getElementById("timerDisplay");
+  disp.style.color = "black";
+
+  timerInterval = setInterval(() => {
+    timerRemaining--;
+    updateTimerDisplay();
+    if (timerRemaining <= 0) {
+      clearInterval(timerInterval);
+      timerInterval = null;
+    }
+  }, 1000);
+}
+
+function pauseTimer() {
+  if (timerInterval) {
+    clearInterval(timerInterval);
+    timerInterval = null;
+  }
+}
+
+function resetTimer() {
+  pauseTimer();
+  const disp = document.getElementById("timerDisplay");
+  disp.textContent = document.getElementById("timerInput").value;
+  disp.style.color = "black";
+}
+
+
+/* ===========================
+   ▼ 組み合わせロジック
+=========================== */
+let players = [];
+let roundNumber = 1;
+
+window.onload = function () {
+
+  const countSelect = document.getElementById("playerCount");
+  const courtsInput = document.getElementById("courtsInput");
+  const setupBtn = document.getElementById("setupBtn");
+  const nextBtn = document.getElementById("nextBtn");
+  const roundsDiv = document.getElementById("rounds");
+  const tableBox = document.getElementById("playerTable");
+  const summaryBox = document.getElementById("playerSummary");
+
+  // プルダウン設定
+  for (let i = 4; i <= 20; i++) {
+    const op = document.createElement("option");
+    op.value = i;
+    op.textContent = `${i} 人`;
+    countSelect.appendChild(op);
+  }
+
+  // 人数確定
+  setupBtn.onclick = () => {
+    const n = parseInt(countSelect.value, 10);
+
+    players = [];
+    for (let i = 1; i <= n; i++) {
+      players.push({
+        name: `${i}`,
+        games: 0,
+        refs: 0,
+        partners: new Set()
+      });
+    }
+
+    roundNumber = 1;
+    roundsDiv.innerHTML = "<h2>試合履歴</h2>";
+    summaryBox.style.display = "block";
+    renderPlayerTable();
+  };
+
+  // 次の試合
+  nextBtn.onclick = () => {
+    const courts = parseInt(courtsInput.value, 10);
+    createNextRound(courts);
+  };
+
+  /* ===== ラウンド生成 ===== */
+  function createNextRound(courtCount) {
+
+    const rounds = [];
+    const used = new Set();
+
+    const sorted = players
+      .map((p, i) => ({ idx: i, games: p.games }))
+      .sort((a, b) => a.games - b.games)
+      .map(x => x.idx);
+
+    for (let c = 0; c < courtCount; c++) {
+      const candidates = sorted.filter(i => !used.has(i));
+      if (candidates.length < 4) break;
+
+      const four = pickBestFour(candidates);
+      if (!four) break;
+
+      four.forEach(i => used.add(i));
+      const pair = pickBestPairs(four);
+      rounds.push(pair);
+    }
+
+    if (rounds.length === 0) {
+      alert("これ以上公平に組めません！");
+      return;
+    }
+
+    const playing = new Set();
+    rounds.forEach(r => {
+      r.teamA.concat(r.teamB).forEach(i => playing.add(i));
+    });
+
+    const rest = players
+      .map((p, i) => i)
+      .filter(i => !playing.has(i))
+      .sort((a, b) => players[a].refs - players[b].refs);
+
+    const refs = rest.slice(0, rounds.length);
+    const bench = rest.slice(rounds.length);
+
+    rounds.forEach(r => {
+      r.teamA.forEach(i => players[i].games++);
+      r.teamB.forEach(i => players[i].games++);
+      players[r.teamA[0]].partners.add(r.teamA[1]);
+      players[r.teamA[1]].partners.add(r.teamA[0]);
+      players[r.teamB[0]].partners.add(r.teamB[1]);
+      players[r.teamB[1]].partners.add(r.teamB[0]);
+    });
+    refs.forEach(i => players[i].refs++);
+
+    renderRound(rounds, refs, bench);
+    renderPlayerTable();
+  }
+
+
+  /* ===== 4人選択（修正版） ===== */
+  function pickBestFour(candidates) {
+    let best = null, bestScore = Infinity;
+
+    function score(a, b) {
+      return players[a].partners.has(b) ? 10 : 0;
+    }
+
+    for (let i = 0; i < candidates.length; i++) {
+      for (let j = i + 1; j < candidates.length; j++) {
+        for (let k = j + 1; k < candidates.length; k++) {
+          for (let l = k + 1; l < candidates.length; l++) {
+
+            const g = [candidates[i], candidates[j], candidates[k], candidates[l]];
+
+            const s =
+              score(g[0], g[1]) +
+              score(g[0], g[2]) +
+              score(g[0], g[3]) +
+              score(g[1], g[2]) +
+              score(g[1], g[3]) +
+              score(g[2], g[3]);
+
+            if (s < bestScore) {
+              bestScore = s;
+              best = g;
+            }
+
+          }
+        }
+      }
+    }
+    return best;
+  }
+
+
+  /* ===== ペア選択 ===== */
+  function pickBestPairs(group) {
+    const [a,b,c,d] = group;
+
+    const patterns = [
+      { teamA:[a,b], teamB:[c,d] },
+      { teamA:[a,c], teamB:[b,d] },
+      { teamA:[a,d], teamB:[b,c] },
+    ];
+
+    function score(x,y){ return players[x].partners.has(y) ? 10 : 0; }
+
+    let best = null, bestScore = Infinity;
+
+    patterns.forEach(p=>{
+      const s = score(p.teamA[0],p.teamA[1]) + score(p.teamB[0],p.teamB[1]);
+      if (s < bestScore){ best=p; bestScore=s; }
+    });
+
+    return best;
+  }
+
+
+  /* ===== 表示 ===== */
+  function renderRound(rounds, refs, benches) {
+
+    const box = document.createElement("div");
+    box.className = "block";
+
+    box.innerHTML = `<h3>第 ${roundNumber} 試合</h3>`;
+
+    const table = document.createElement("table");
+    table.innerHTML = `
+      <tr>
+        <th>コート</th>
+        <th>Team A</th>
+        <th>Team B</th>
+        <th>審判</th>
+      </tr>
+    `;
+
+    rounds.forEach((r,i)=>{
+      const row=document.createElement("tr");
+      const refName = refs[i] !== undefined ? players[refs[i]].name : "-";
+      row.innerHTML = `
+        <td>${i+1}</td>
+        <td>${players[r.teamA[0]].name} ＆ ${players[r.teamA[1]].name}</td>
+        <td>${players[r.teamB[0]].name} ＆ ${players[r.teamB[1]].name}</td>
+        <td>${refName}</td>
+      `;
+      table.appendChild(row);
+    });
+
+    box.appendChild(table);
+
+    if (benches.length > 0) {
+      const p=document.createElement("p");
+      p.textContent = "休憩：" + benches.map(i=>players[i].name).join("、 ");
+      box.appendChild(p);
+    }
+
+    roundsDiv.appendChild(box);
+
+    roundNumber++;
+  }
+
+  function renderPlayerTable() {
+    const table = document.createElement("table");
+    table.innerHTML = `
+      <tr>
+        <th>番号</th>
+        <th>試合数</th>
+        <th>審判数</th>
+      </tr>
+    `;
+
+    players.forEach(p=>{
+      const row=document.createElement("tr");
+      row.innerHTML = `
+        <td>${p.name}</td>
+        <td>${p.games}</td>
+        <td>${p.refs}</td>
+      `;
+      table.appendChild(row);
+    });
+
+    tableBox.innerHTML = "";
+    tableBox.appendChild(table);
+  }
+
+};
+
+
+// ▼ サービスワーカー登録
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('./sw.js')
+    .catch(err => console.log('SW registration failed', err));
+}
+</script>
+
+</body>
+</html>
