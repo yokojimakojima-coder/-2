@@ -2,77 +2,53 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<title>バドミントン組み合わせアプリ（PWA対応）</title>
+<title>バドミントン組み合わせアプリ（PWA対応・20試合自動生成）</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#4CAF50">
 
-<!-- PWA マニフェスト -->
 <link rel="manifest" href="manifest.webmanifest">
 
 <style>
-  body {
-    font-family: sans-serif;
-    margin: 16px;
-    font-size: 16px;
-  }
+  body { font-family: sans-serif; margin: 16px; font-size: 16px; }
   select, input, button {
-    padding: 10px;
-    font-size: 18px;
-    margin: 6px 0;
-    width: 100%;
-    box-sizing: border-box;
+    padding: 10px; font-size: 18px; margin: 6px 0;
+    width: 100%; box-sizing: border-box;
   }
   button {
-    background: #4CAF50;
-    color: white;
-    border: none;
-    border-radius: 6px;
+    background: #4CAF50; color: white;
+    border: none; border-radius: 6px;
   }
-  button:active {
-    opacity: 0.7;
-  }
+  button:active { opacity: 0.7; }
   .block {
-    border: 1px solid #ccc;
-    padding: 12px;
-    border-radius: 8px;
-    margin-top: 16px;
+    border: 1px solid #ccc; padding: 12px;
+    border-radius: 8px; margin-top: 16px;
   }
   table {
-    border-collapse: collapse;
-    width: 100%;
-    margin-top: 10px;
-    font-size: 14px;
+    border-collapse: collapse; width: 100%;
+    margin-top: 10px; font-size: 14px;
   }
   th, td {
-    border: 1px solid #ccc;
-    padding: 6px;
+    border: 1px solid #ccc; padding: 6px;
     text-align: center;
   }
-  th {
-    background: #f0f0f0;
-  }
-  .table-wrap {
-    overflow-x: auto;
-  }
+  th { background: #f0f0f0; }
+  .table-wrap { overflow-x: auto; }
 
   .timer-display {
-    font-size: 40px;
-    font-weight: bold;
-    text-align: center;
-    margin: 10px 0;
+    font-size: 40px; font-weight: bold;
+    text-align: center; margin: 10px 0;
   }
-
 </style>
 </head>
 <body>
 
-<h1>バドミントン組み合わせアプリ（PWA対応）</h1>
+<h1>バドミントン組み合わせアプリ（20試合自動生成）</h1>
 
 <!-- ▼ 独立タイマー -->
 <div class="block">
-  <h2>⏱ 共通タイマー（独立）</h2>
+  <h2>⏱ 共通タイマー</h2>
 
-  試合時間（分：秒）  
+  試合時間（分：秒）
   <input id="timerInput" type="text" value="10:00">
 
   <div id="timerDisplay" class="timer-display">10:00</div>
@@ -92,7 +68,6 @@
   <input id="courtsInput" type="number" min="1" value="1">
 
   <button id="setupBtn">人数を確定 / リセット</button>
-  <button id="nextBtn">次の試合を作成</button>
 </div>
 
 
@@ -101,19 +76,20 @@
   <h2>試合履歴</h2>
 </div>
 
+<!-- ▼ 試合追加ボタン（20試合の下に追加される） -->
+<button id="addBtn" style="display:none; margin-top:20px;">試合を追加</button>
+
 
 <!-- ▼ プレイヤー情報（最下部） -->
 <div id="playerSummary" class="block" style="display:none;">
   <h2>プレイヤー情報</h2>
-  <div class="table-wrap">
-    <div id="playerTable"></div>
-  </div>
+  <div class="table-wrap"><div id="playerTable"></div></div>
 </div>
 
 
 <script>
 /* ===========================
-   ▼ タイマー処理（独立）
+   ▼ タイマー処理
 =========================== */
 let timerInterval = null;
 let timerRemaining = 0;
@@ -133,8 +109,8 @@ function updateTimerDisplay() {
 
 function startTimer() {
   if (timerInterval) return;
-
   timerRemaining = parseTime(document.getElementById("timerInput").value);
+
   const disp = document.getElementById("timerDisplay");
   disp.style.color = "black";
 
@@ -170,11 +146,10 @@ let players = [];
 let roundNumber = 1;
 
 window.onload = function () {
-
   const countSelect = document.getElementById("playerCount");
   const courtsInput = document.getElementById("courtsInput");
   const setupBtn = document.getElementById("setupBtn");
-  const nextBtn = document.getElementById("nextBtn");
+  const addBtn = document.getElementById("addBtn");
   const roundsDiv = document.getElementById("rounds");
   const tableBox = document.getElementById("playerTable");
   const summaryBox = document.getElementById("playerSummary");
@@ -187,35 +162,40 @@ window.onload = function () {
     countSelect.appendChild(op);
   }
 
-  // 人数確定
+  // 人数確定（セットアップ）
   setupBtn.onclick = () => {
     const n = parseInt(countSelect.value, 10);
 
     players = [];
     for (let i = 1; i <= n; i++) {
-      players.push({
-        name: `${i}`,
-        games: 0,
-        refs: 0,
-        partners: new Set()
-      });
+      players.push({ name: `${i}`, games: 0, refs: 0, partners: new Set() });
     }
 
     roundNumber = 1;
     roundsDiv.innerHTML = "<h2>試合履歴</h2>";
     summaryBox.style.display = "block";
     renderPlayerTable();
+
+    // ▼▼▼ ここで20試合一括自動生成 ▼▼▼
+    const courts = parseInt(courtsInput.value, 10);
+    for (let i = 0; i < 20; i++) {
+      createNextRound(courts);
+    }
+    // ▲▲▲ ここまで20試合自動生成 ▲▲▲
+
+    // ● 試合追加ボタンを表示
+    addBtn.style.display = "block";
   };
 
-  // 次の試合
-  nextBtn.onclick = () => {
+  // ▼ 試合追加（21試合目〜）
+  addBtn.onclick = () => {
     const courts = parseInt(courtsInput.value, 10);
     createNextRound(courts);
   };
 
+
   /* ===== ラウンド生成 ===== */
   function createNextRound(courtCount) {
-
     const rounds = [];
     const used = new Set();
 
@@ -257,11 +237,13 @@ window.onload = function () {
     rounds.forEach(r => {
       r.teamA.forEach(i => players[i].games++);
       r.teamB.forEach(i => players[i].games++);
+
       players[r.teamA[0]].partners.add(r.teamA[1]);
       players[r.teamA[1]].partners.add(r.teamA[0]);
       players[r.teamB[0]].partners.add(r.teamB[1]);
       players[r.teamB[1]].partners.add(r.teamB[0]);
     });
+
     refs.forEach(i => players[i].refs++);
 
     renderRound(rounds, refs, bench);
@@ -269,7 +251,7 @@ window.onload = function () {
   }
 
 
-  /* ===== 4人選択（修正版） ===== */
+  /* ===== 4人選択 ===== */
   function pickBestFour(candidates) {
     let best = null, bestScore = Infinity;
 
